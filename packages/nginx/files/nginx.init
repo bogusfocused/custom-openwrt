@@ -1,0 +1,47 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2015 OpenWrt.org
+
+START=80
+
+USE_PROCD=1
+
+G_OPTS="daemon off;"
+
+NGINX_BIN="/usr/sbin/nginx"
+
+CONF="/etc/nginx/nginx.conf"
+
+start_service() {
+    mkdir -p "/usr/lib/nginx/modules"
+    mkdir -p "/var/run"
+    mkdir -p "/var/log/nginx"
+    mkdir -p "/var/cache/nginx/client_temp"
+    mkdir -p "/var/cache/nginx/proxy_temp"
+    mkdir -p "/var/cache/nginx/scgi_temp"
+    mkdir -p "/var/cache/nginx/uwsgi_temp"
+    mkdir -p "/var/cache/nginx/fastcgi_temp"
+    procd_open_instance
+    procd_set_param command ${NGINX_BIN} -c "${CONF}" -g "${G_OPTS}"
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param file "${CONF}"
+    procd_set_param respawn
+    procd_close_instance
+}
+
+
+# reload_service() {
+
+# 	if [ "$(cat "/proc/$(cat "/var/run/nginx.pid")/cmdline")" = \
+# 	     "nginx: master process /usr/sbin/nginx -c ${CONF} -g ${G_OPTS}" ]
+# 	then procd_send_signal nginx
+# 	else restart
+# 	fi
+# }
+
+
+# extra_command "relog" "Reopen log files (without reloading)"
+# relog() {
+# 	[ -d /var/log/nginx ] || mkdir -p /var/log/nginx
+# 	procd_send_signal nginx '*' USR1
+# }

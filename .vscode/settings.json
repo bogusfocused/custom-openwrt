@@ -1,0 +1,6 @@
+{
+    "files.eol": "\n",
+    "git.enabled": true,
+    "git.enableCommitSigning": true,
+    "debug.allowBreakpointsEverywhere": true
+}

@@ -1,0 +1,104 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2022 Rohit Lodha <bogusfocused@gmail.com>
+
+
+USE_PROCD=1
+START=95
+STOP=10
+PROCD_DEBUG=1
+APP="rclone-server"
+CONFIGURATION="rclone"
+RCLONE_BIN="/usr/sbin/rclone"
+RCLONE_UBUS_BIN="/usr/libexec/rclone/ubus"
+RCLONE_DUMP_BIN="/usr/libexec/rclone/dump"
+
+RCLONE_CONF="/etc/rclone.conf"
+
+_info() {
+    logger -p daemon.info -t "$APP" "$*"
+}
+_debug() {
+    logger -p daemon.debug -t "$APP" "$*"
+}
+_err() {
+    logger -p daemon.err -t "$APP" "$*"
+}
+
+
+procd_set_param2() {
+    local old_cb
+    json_set_namespace procd old_cb
+    local ___param="$1"; shift
+    json_add_object "$___param"
+    while [ $# -ge 2 ]; do
+        json_add_string "$1" "$2"
+        shift 2
+    done
+    json_close_object;
+    json_set_namespace $old_cb
+}
+start_service() {
+    procd_open_instance "rcd"
+    procd_set_param command "${RCLONE_BIN}" "rcd"
+    procd_append_param command   "--config=/var$RCLONE_CONF"
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn
+    
+    set -o noglob
+    
+    conf="$($RCLONE_DUMP_BIN dumpconfig 2>&1)"
+    [ $? = 0 ]  || error="$conf" &&  echo "$conf" >"/var$RCLONE_CONF"
+    [ -z "$error" ] && {
+        env="$($RCLONE_DUMP_BIN dumpenv 2>&1)"
+        [ $? = 0 ] ||  error="$env" &&     set -- $env
+    }
+    [ -z "$error" ] ||     {
+        procd_set_param error "$error"
+        procd_close_instance
+        return
+    }
+    # first pair is 1:ADDR 2:ipaddr [3:NO_AUTH 4:true  || 3:USER 4:user 5:PASS 6:pass] ....
+    procd_append_param command   "--rc-addr=$2"
+    
+    if [ "$3" = "RCLONE_RC_NO_AUTH" ] ; then
+        procd_append_param command   "--rc-no-auth"
+        data="$1 $2 $3 $4"
+        shift 4
+    else
+        data="$1 $2 $3 $4 $5 $6 "
+        shift 2
+    fi
+    procd_set_param2  env "$@"
+    procd_set_param2  data  $data RCLONE_CONFIG " /var${RCLONE_CONF}"
+    procd_close_instance
+    
+    if [ -f "${RCLONE_UBUS_BIN}" ]; then
+        procd_open_instance ubus
+        procd_set_param command "${RCLONE_UBUS_BIN}"
+        procd_set_param stdout 1
+        procd_set_param stderr 1
+        procd_set_param respawn
+        procd_set_param2  env $data RCLONE_CONFIG  "/var${RCLONE_CONF}"
+        procd_close_instance
+    fi
+    
+    set +o noglob
+    
+}
+service_stop() {
+    rclone rc core/quit
+    procd_send_signal rclone ubus SIGTERM
+}
+service_started() {
+    :
+}
+
+reload_service() {
+    stop
+    start
+}
+
+
+
+

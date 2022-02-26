@@ -1,0 +1,141 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target
+        required: true
+        default: ALL
+        type: choice
+        options:
+          - ALL
+          - apm821xx/nand
+          - apm821xx/sata
+          - arc770/generic
+          - archs38/generic
+          - armvirt/32
+          - armvirt/64
+          - at91/sam9x
+          - at91/sama5
+          - ath79/generic
+          - ath79/mikrotik
+          - ath79/nand
+          - ath79/tiny
+          - bcm27xx/bcm2708
+          - bcm27xx/bcm2709
+          - bcm27xx/bcm2710
+          - bcm27xx/bcm2711
+          - bcm47xx/generic
+          - bcm47xx/legacy
+          - bcm47xx/mips74k
+          - bcm4908/generic
+          - bcm53xx/generic
+          - bcm63xx/generic
+          - bcm63xx/smp
+          - ipq40xx/generic
+          - ipq40xx/mikrotik
+          - ipq806x/generic
+          - lantiq/ase
+          - lantiq/falcon
+          - lantiq/xrx200
+          - lantiq/xway
+          - lantiq/xway_legacy
+          - layerscape/armv7
+          - layerscape/armv8_64b
+          - malta/be
+          - malta/be64
+          - malta/le
+          - malta/le64
+          - mediatek/mt7622
+          - mediatek/mt7623
+          - mediatek/mt7629
+          - mpc85xx/p1010
+          - mpc85xx/p1020
+          - mpc85xx/p2020
+          - mvebu/cortexa53
+          - mvebu/cortexa72
+          - mvebu/cortexa9
+          - oxnas/ox810se
+          - oxnas/ox820
+          - ramips/mt7620
+          - ramips/mt7621
+          - ramips/mt76x8
+          - ramips/rt288x
+          - ramips/rt305x
+          - ramips/rt3883
+          - realtek/generic
+          - rockchip/armv8
+          - sunxi/cortexa53
+          - sunxi/cortexa7
+          - sunxi/cortexa8
+          - x86/64
+          - x86/generic
+          - x86/geode
+          - x86/legacy
+      version:
+        description: Openwrt version
+        required: true
+        default: v21.02.2
+        type: choice
+        options:
+          - v21.02.2
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: |
+          echo "BUILD_TARGETS=${{ github.event.inputs.target }}">> $GITHUB_ENV
+          echo "OPENWRT_VERSION=${{ github.event.inputs.version }}">> $GITHUB_ENV
+        if: github.event_name == 'workflow_dispatch'
+        name: workflow_dispatch
+      - run: |
+          tag=${{ github.event.release.tagName }}
+          echo "OPENWRT_VERSION=${tag%%[-_]*}">> $GITHUB_ENV
+        if: github.event_name == 'release'
+        name: release
+      - run: |
+          echo "SOURCE_DIR=${{ github.workspace }}" >> $GITHUB_ENV
+        name: set source dir
+      - name: build
+        run: |
+          mkdir -p /home/build/openwrt
+          cd /home/build/openwrt
+          source ${{ github.workspace }}/build/build.sh
+          echo "BUILDLOG=$BUILDLOG" >> $GITHUB_ENV
+          echo "BIN_DIR=$BIN_DIR" >> $GITHUB_ENV
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+      - name: Upload logs
+        uses: actions/upload-artifact@v3
+        if: ${{ always()}}
+        with:
+          name: buildlog
+          path: ${{ env.BUILDLOG }}
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        if: ${{ success() }}
+        with:
+          name: artifacts-${{ env.TIMESTAMP}}
+          path: ${{ env.BIN_DIR }}/**/*.zip
+      - name: Upload assets
+        if: success() && github.event_name == 'release'
+        run: |
+          files="$(find $BIN_DIR -type f -name '*.zip')"
+          url="${{ github.event.release.upload_url }}"
+          for file in $files; do
+            name=$(basename "$file")
+            curl --request POST -H 'Content-Type: application/octet-stream'  \
+            -u "${{github.owner}}:${{ github.token}}"  \
+            --data-binary @$file  \
+            "${url%{*}?name=${name}"
+          done
+      - run: rm -rf $BIN_DIR
